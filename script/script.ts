@@ -1,18 +1,17 @@
 import * as ts from 'typescript';
 import * as fs from 'fs';
+import { TypeChecker } from 'typescript';
+
+const httpMethods = ['Get', 'Post', 'Delete', 'Patch', 'Put'];
 
 async function run(filePath: string) {
-  const sourceCode = fs.readFileSync(filePath, 'utf-8');
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    sourceCode,
-    ts.ScriptTarget.Latest,
-  );
+  const program = ts.createProgram([filePath], {});
+  const checker = program.getTypeChecker();
 
-  ts.forEachChild(sourceFile, visit);
+  ts.forEachChild(program.getSourceFile(filePath), (node) => visit(node, checker));
 }
 
-function visit(node: ts.Node) {
+function visit(node: ts.Node, checker: TypeChecker) {
   if (!ts.isClassDeclaration(node)) {
     return;
   }
@@ -37,8 +36,60 @@ function visit(node: ts.Node) {
     }
   }
 
-  console.log(version);
-  console.log(apiPath);
+  const methods = node.members.filter((member) => ts.isMethodDeclaration(member));
+  for (const method of methods) {
+    let httpMethod: string | undefined;
+    if (!ts.isIdentifier(method.name)) {
+      continue;
+    }
+    const methodName = method.name.escapedText.toString();
+    let apiPaths: string[] = [];
+    const parameters = method.parameters;
+    for (const parameter of parameters) {
+      // console.log(parameter);
+      if (parameter.type) {
+        // console.log(parameter.type);
+        // const type = checker.getTypeFromTypeNode(parameter.type);
+        // const typeString = checker.typeToString(type);
+        // console.log(type);
+        // console.log(typeString);
+      }
+    }
+
+    const methodDecorators = method.modifiers.filter((modifier) =>
+      ts.isDecorator(modifier),
+    );
+    for (const methodDecorator of methodDecorators) {
+      const expression = methodDecorator.expression;
+      if (!ts.isCallExpression(expression)) {
+        continue;
+      }
+
+      const data = expression.expression;
+
+      // http method 데코레이터
+      if (ts.isIdentifier(data)) {
+        if (httpMethods.includes(data.escapedText.toString())) {
+          httpMethod = data.escapedText.toString();
+        }
+      }
+
+      const stringLiteral = expression.arguments.find((arg) => ts.isStringLiteral(arg));
+      const arrayLiteralExpression = expression.arguments.find((arg) => ts.isArrayLiteralExpression(arg));
+      if (stringLiteral) {
+        apiPaths = [stringLiteral.text];
+      } else if (arrayLiteralExpression) {
+        const stringLiterals = arrayLiteralExpression.elements.filter((element) => ts.isStringLiteral(element));
+        apiPaths = stringLiterals.map((stringLiteral) => stringLiteral.text);
+      } else {
+        apiPaths = ['/'];
+      }
+    }
+
+    console.log(methodName);
+    console.log(httpMethod);
+    console.log(apiPaths);
+  }
 }
 
 // 특정 데코레이터가 Controller인지 확인하는 함수
