@@ -3,10 +3,9 @@ import { AppService } from './app.service';
 import { RequestDto } from './dto/request.dto';
 import ResponseDto from './dto/response.dto';
 
-// @Controller('/hello')
 @Controller({
   version: '1',
-  path: '/api/hello',
+  path: '/app',
 })
 export class AppController {
   constructor(private readonly appService: AppService) {}
