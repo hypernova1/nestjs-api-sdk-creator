@@ -10,7 +10,6 @@ async function run(filePath: string) {
 
   ts.forEachChild(program.getSourceFile(filePath), (node) => visit(node, checker));
 }
-
 function visit(node: ts.Node, checker: TypeChecker) {
   if (!ts.isClassDeclaration(node)) {
     return;
@@ -44,17 +43,7 @@ function visit(node: ts.Node, checker: TypeChecker) {
     }
     const methodName = method.name.escapedText.toString();
     let apiPaths: string[] = [];
-    const parameters = method.parameters;
-    for (const parameter of parameters) {
-      // console.log(parameter);
-      if (parameter.type) {
-        // console.log(parameter.type);
-        // const type = checker.getTypeFromTypeNode(parameter.type);
-        // const typeString = checker.typeToString(type);
-        // console.log(type);
-        // console.log(typeString);
-      }
-    }
+    extractParameterData(method, checker);
 
     const methodDecorators = method.modifiers.filter((modifier) =>
       ts.isDecorator(modifier),
@@ -91,6 +80,23 @@ function visit(node: ts.Node, checker: TypeChecker) {
     console.log(apiPaths);
   }
 }
+
+function extractParameterData(
+  method: ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+) {
+  const parameters = method.parameters;
+  for (const parameter of parameters) {
+    // console.log(parameter);
+    if (parameter.type) {
+      const type = checker.getTypeFromTypeNode(parameter.type);
+      console.log(type.symbol);
+      const typeString = checker.typeToString(type);
+      console.log(typeString);
+    }
+  }
+}
+
 
 // 특정 데코레이터가 Controller인지 확인하는 함수
 function isControllerDecorator(callExpression: ts.CallExpression): boolean {
