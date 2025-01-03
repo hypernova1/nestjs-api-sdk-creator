@@ -1,6 +1,6 @@
 import * as ts from 'typescript';
 import * as fs from 'fs';
-import { TypeChecker } from 'typescript';
+import { __String, TypeChecker } from 'typescript';
 
 const httpMethods = ['Get', 'Post', 'Delete', 'Patch', 'Put'];
 
@@ -10,6 +10,28 @@ async function run(filePath: string) {
 
   ts.forEachChild(program.getSourceFile(filePath), (node) => visit(node, checker));
 }
+
+function extractApiData(method: ts.MethodDeclaration): {
+  httpMethod?: string;
+  apiPaths: string[];
+} {
+  let apiPaths: string[] = [];
+  let httpMethod: string | undefined;
+  const methodDecorators = method.modifiers.filter((modifier) =>
+    ts.isDecorator(modifier),
+  );
+  for (const methodDecorator of methodDecorators) {
+    const expression = methodDecorator.expression;
+    if (!ts.isCallExpression(expression)) {
+      continue;
+    }
+
+    httpMethod = extractHttpMethod(expression.expression);
+    apiPaths = extractApiPaths(expression);
+  }
+  return { httpMethod, apiPaths };
+}
+
 function visit(node: ts.Node, checker: TypeChecker) {
   if (!ts.isClassDeclaration(node)) {
     return;
@@ -37,48 +59,72 @@ function visit(node: ts.Node, checker: TypeChecker) {
 
   const methods = node.members.filter((member) => ts.isMethodDeclaration(member));
   for (const method of methods) {
-    let httpMethod: string | undefined;
     if (!ts.isIdentifier(method.name)) {
       continue;
     }
     const methodName = method.name.escapedText.toString();
-    let apiPaths: string[] = [];
+
+    const apiData = extractApiData(method);
     extractParameterData(method, checker);
-
-    const methodDecorators = method.modifiers.filter((modifier) =>
-      ts.isDecorator(modifier),
-    );
-    for (const methodDecorator of methodDecorators) {
-      const expression = methodDecorator.expression;
-      if (!ts.isCallExpression(expression)) {
-        continue;
-      }
-
-      const data = expression.expression;
-
-      // http method 데코레이터
-      if (ts.isIdentifier(data)) {
-        if (httpMethods.includes(data.escapedText.toString())) {
-          httpMethod = data.escapedText.toString();
-        }
-      }
-
-      const stringLiteral = expression.arguments.find((arg) => ts.isStringLiteral(arg));
-      const arrayLiteralExpression = expression.arguments.find((arg) => ts.isArrayLiteralExpression(arg));
-      if (stringLiteral) {
-        apiPaths = [stringLiteral.text];
-      } else if (arrayLiteralExpression) {
-        const stringLiterals = arrayLiteralExpression.elements.filter((element) => ts.isStringLiteral(element));
-        apiPaths = stringLiterals.map((stringLiteral) => stringLiteral.text);
-      } else {
-        apiPaths = ['/'];
-      }
-    }
+    extractReturnType(checker, method);
 
     console.log(methodName);
-    console.log(httpMethod);
-    console.log(apiPaths);
+    console.log(apiData.httpMethod);
+    console.log(apiData.apiPaths);
   }
+}
+
+function extractReturnType(
+  checker: ts.TypeChecker,
+  method: ts.MethodDeclaration,
+) {
+  const symbol = checker.getSymbolAtLocation(method.name);
+  if (symbol) {
+    const type = checker.getTypeOfSymbolAtLocation(symbol, method);
+    const returnType = checker.getReturnTypeOfSignature(
+      type.getCallSignatures()[0],
+    );
+
+    if (checker.typeToString(returnType).startsWith('Promise')) {
+      const typeArguments = returnType
+        .getSymbol()
+        ?.members?.get('resolve' as __String)?.declarations?.[0];
+      const [promiseInnerType] = checker.getTypeArguments(
+        returnType as ts.TypeReference,
+      );
+      // console.log(typeArguments);
+      console.log(promiseInnerType);
+    }
+  }
+}
+
+function extractHttpMethod(data: ts.Node) {
+  let httpMethod: string | undefined;
+  if (ts.isIdentifier(data)) {
+    if (httpMethods.includes(data.escapedText.toString())) {
+      httpMethod = data.escapedText.toString();
+    }
+  }
+  return httpMethod;
+}
+
+function extractApiPaths(expression: ts.CallExpression) {
+  const stringLiteral = expression.arguments.find((arg) =>
+    ts.isStringLiteral(arg),
+  );
+  const arrayLiteralExpression = expression.arguments.find((arg) =>
+    ts.isArrayLiteralExpression(arg),
+  );
+  if (stringLiteral) {
+    return [stringLiteral.text];
+  } else if (arrayLiteralExpression) {
+    const stringLiterals = arrayLiteralExpression.elements.filter((element) =>
+      ts.isStringLiteral(element),
+    );
+    return stringLiterals.map((stringLiteral) => stringLiteral.text);
+  }
+
+  return ['/'];
 }
 
 function extractParameterData(
@@ -87,12 +133,9 @@ function extractParameterData(
 ) {
   const parameters = method.parameters;
   for (const parameter of parameters) {
-    // console.log(parameter);
     if (parameter.type) {
       const type = checker.getTypeFromTypeNode(parameter.type);
-      console.log(type.symbol);
       const typeString = checker.typeToString(type);
-      console.log(typeString);
     }
   }
 }
